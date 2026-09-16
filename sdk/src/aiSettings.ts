@@ -201,8 +201,7 @@ export function renderAiSettings(containerEl: HTMLElement, host: AiSettingsHost)
       .setName(credentialLabel)
       .setDesc(
         `${credentialFrom}` +
-          `明文保存在 .obsidian/plugins/${host.pluginId}/data.json 里 —— ` +
-          "`.obsidian/` 不进 Git 也不进同步，所以换设备要重新填一次。",
+          `明文保存在 ${host.pluginId} 插件目录的 data.json 里  配置目录不进 Git 也不进同步，所以换设备要重新填一次。`
       )
       .addText((text) => {
         text.inputEl.type = "password";

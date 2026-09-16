@@ -231,7 +231,7 @@ export default class SfcAiPlugin extends Plugin {
       },
       remove: async (targetPath) => {
         const file = this.app.vault.getAbstractFileByPath(targetPath);
-        if (file instanceof TFile) await this.app.vault.trash(file, true);
+        if (file instanceof TFile) await this.app.fileManager.trashFile(file);
       },
     };
     this.backups = new BackupStore(

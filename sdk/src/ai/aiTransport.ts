@@ -44,9 +44,6 @@
  * answered by `aiProviders.ts` alone.
  */
 
-import type * as NodeHttp from "node:http";
-import type * as NodeHttps from "node:https";
-
 /** How long a request gets before it is aborted, unless the caller says otherwise. */
 export const AI_TRANSPORT_DEFAULT_TIMEOUT_MS = 120_000;
 
@@ -215,7 +212,7 @@ export const nodeAiTransportFetch: AiTransportFetch = async (request, signal) =>
       headers["Content-Length"] = String(utf8ByteLength(body));
     }
 
-    let nodeRequest: NodeHttp.ClientRequest;
+    let nodeRequest: import("node:http").ClientRequest;
     try {
       nodeRequest = client.request(
         {
@@ -266,7 +263,7 @@ export const nodeAiTransportFetch: AiTransportFetch = async (request, signal) =>
 };
 
 /** Read a Node response to a string. UTF-8 continuations are handled by setEncoding. */
-function collectText(response: NodeHttp.IncomingMessage): Promise<string> {
+function collectText(response: import("node:http").IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     response.setEncoding("utf8");
     let text = "";
@@ -279,7 +276,7 @@ function collectText(response: NodeHttp.IncomingMessage): Promise<string> {
 }
 
 /** Stream a Node response as UTF-8 strings. */
-async function* iterateText(response: NodeHttp.IncomingMessage): AsyncIterable<string> {
+async function* iterateText(response: import("node:http").IncomingMessage): AsyncIterable<string> {
   response.setEncoding("utf8");
   for await (const chunk of response) yield chunk as string;
 }
@@ -385,7 +382,7 @@ function utf8ByteLength(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 
-function normalizeNodeHeaders(headers: NodeHttp.IncomingHttpHeaders): Record<string, string> {
+function normalizeNodeHeaders(headers: import("node:http").IncomingHttpHeaders): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
     if (value === undefined) continue;
@@ -424,14 +421,14 @@ let nodeClients: NodeClients | null = null;
 /** Set once the load has been proven impossible, so it is not retried per request. */
 let nodeClientsUnavailable = false;
 
-type NodeClients = { httpClient: typeof NodeHttp; httpsClient: typeof NodeHttps };
+type NodeClients = { httpClient: typeof import("node:http"); httpsClient: typeof import("node:https") };
 
 export function clientsFromRequire(loader: unknown): NodeClients | null {
   if (typeof loader !== "function") return null;
   try {
     const realRequire = loader as (id: string) => unknown;
-    const httpClient = realRequire("node:http") as typeof NodeHttp | undefined;
-    const httpsClient = realRequire("node:https") as typeof NodeHttps | undefined;
+    const httpClient = realRequire("node:http") as typeof import("node:http") | undefined;
+    const httpsClient = realRequire("node:https") as typeof import("node:https") | undefined;
     // A shim that returns an empty object instead of throwing is worse than one
     // that throws: the request would be built against nothing and fail later
     // with a confusing message. `request` is the only member used.
@@ -465,8 +462,8 @@ async function loadNodeHttpClients(): Promise<NodeClients | null> {
     const [httpModule, httpsModule] = await Promise.all([import("node:http"), import("node:https")]);
     const resolve = <T,>(module: T & { default?: T }): T => (module.default ?? module);
     nodeClients = {
-      httpClient: resolve(httpModule as unknown as typeof NodeHttp & { default?: typeof NodeHttp }),
-      httpsClient: resolve(httpsModule as unknown as typeof NodeHttps & { default?: typeof NodeHttps }),
+      httpClient: resolve(httpModule as unknown as typeof import("node:http") & { default?: typeof import("node:http") }),
+      httpsClient: resolve(httpsModule as unknown as typeof import("node:https") & { default?: typeof import("node:https") }),
     };
     return nodeClients;
   } catch {
@@ -536,7 +533,7 @@ export function createXhrTransportFetch(makeXhr: XhrFactory): AiTransportFetch {
         failure = error;
         cleanup();
         wake();
-        if (!resolved) reject(error ?? new AiTransportError("network", `请求 ${request.url} 失败。`, { url: request.url }));
+        if (!resolved) reject(error instanceof Error ? error : new AiTransportError("network", `请求 ${request.url} 失败。`, { url: request.url }));
       };
       const onSignalAbort = (): void => {
         try {
@@ -569,7 +566,7 @@ export function createXhrTransportFetch(makeXhr: XhrFactory): AiTransportFetch {
             headers: parseRawHeaders(xhr.getAllResponseHeaders()),
             text: async () => {
               await waitDone();
-              if (failure) throw failure;
+              if (failure) throw failure instanceof Error ? failure : new AiTransportError("network", `请求 ${request.url} 失败。`, { url: request.url });
               return xhr.responseText ?? "";
             },
             stream: () => readChunks(),
@@ -595,7 +592,7 @@ export function createXhrTransportFetch(makeXhr: XhrFactory): AiTransportFetch {
         for (;;) {
           while (chunks.length) yield chunks.shift() as string;
           if (done) {
-            if (failure) throw failure;
+            if (failure) throw failure instanceof Error ? failure : new AiTransportError("network", `请求 ${request.url} 失败。`, { url: request.url });
             return;
           }
           await new Promise<void>((res) => waiters.push(res));

@@ -12,7 +12,7 @@
 // break. The shared sfc-sdk sources ARE bundled in, from ../sdk/src,
 // because a plugin must never require another plugin at runtime.
 //
-// `builtin-modules` lists Node's builtins by their bare names (`http`), and the
+// `builtin-modules` lists Node's builtinModules by their bare names (`http`), and the
 // bundle imports the prefixed spelling (`node:http`), which that list does not
 // contain -- so the prefixed form has to be added explicitly. Without it esbuild
 // tries to resolve the builtin as a package and the build fails with "Are you
@@ -20,11 +20,11 @@
 // missing externals entry.
 import esbuild from "esbuild";
 import process from "process";
-import builtins from "builtin-modules";
+import { builtinModules } from "node:module";
 
 const watch = process.argv.includes("--watch");
 const production = process.argv.includes("--production");
-const nodeBuiltins = [...builtins, ...builtins.map((name) => `node:${name}`)];
+const nodeBuiltins = [...builtinModules, ...builtinModules.map((name) => `node:${name}`)];
 
 const options = {
   entryPoints: ["src/main.ts"],

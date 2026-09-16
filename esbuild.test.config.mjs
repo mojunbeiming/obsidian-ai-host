@@ -15,11 +15,11 @@
 // signal: the seam has to be explicit, because the caller is what the tests
 // substitute.
 import fs from "node:fs";
-import builtins from "builtin-modules";
+import { builtinModules } from "node:module";
 import esbuild from "esbuild";
 
 const SPECIFIER = /(?:\bfrom\s*|^\s*import\s*|\brequire\(\s*)["']([^"']+)["']/gm;
-const BUILTINS = new Set([...builtins, "obsidian"]);
+const BUILTINS = new Set([...builtinModules, "obsidian"]);
 
 /** Why this module cannot be bundled for `node --test`, or null when it can. */
 function externalReason(text) {

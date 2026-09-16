@@ -1,6 +1,6 @@
 {
   "name": "obsidian-ai-host",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "license": "MIT",
   "author": "Helfas",
@@ -12,7 +12,6 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "builtin-modules": "^4.0.0",
     "esbuild": "^0.24.0",
     "obsidian": "^1.8.0",
     "typescript": "^5.6.0"

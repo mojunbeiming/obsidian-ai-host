@@ -529,7 +529,7 @@ export function createAgentToolContext(input: AgentToolContextInput): AgentToolC
       if (!file) throw new Error(`找不到笔记：${target}`);
       const original = await app.vault.cachedRead(file);
       const audit = await backups.record({ batchId, runId, tool, path: target, before: original, after: original });
-      await app.vault.trash(file, true);
+      await app.fileManager.trashFile(file);
       input.trace?.("agent.write", `${tool}：${target}`, `移入回收站（${original.length} 字）`);
       return audit;
     },
