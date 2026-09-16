@@ -1,10 +1,10 @@
 {
   "name": "obsidian-ai-host",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "license": "MIT",
   "author": "Helfas",
-  "description": "Optional shared AI backend for Taskdown and FSRS Flashcards: provider keys in Obsidian's secret storage, streaming chat, mentions and RAG, workspace sandbox, permission tiers, and auditable agent runs.",
+  "description": "Optional shared AI backend for Taskdown and FSRS Flashcards: provider keys in the system keychain, streaming chat, mentions and RAG, workspace sandbox, permission tiers, and auditable agent runs.",
   "scripts": {
     "build": "node esbuild.config.mjs --production",
     "verify": "node scripts/verify-bundle.cjs",

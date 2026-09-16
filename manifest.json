@@ -1,9 +1,9 @@
 {
-  "id": "sfc-ai",
-  "name": "AI Host",
-  "version": "0.2.0",
-  "minAppVersion": "1.8.0",
-  "description": "Optional shared AI backend for Taskdown and FSRS Flashcards: provider keys in Obsidian's secret storage, streaming chat, mentions and RAG, workspace sandbox, permission tiers, and auditable agent runs.",
-  "author": "Helfas",
-  "isDesktopOnly": false
+    "id":  "sfc-ai",
+    "name":  "AI Host",
+    "version":  "0.2.1",
+    "minAppVersion":  "1.8.0",
+    "description":  "Optional shared AI backend for Taskdown and FSRS Flashcards: provider keys in the system keychain, streaming chat, mentions and RAG, workspace sandbox, permission tiers, and auditable agent runs.",
+    "author":  "Helfas",
+    "isDesktopOnly":  false
 }

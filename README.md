@@ -60,3 +60,9 @@ npm run typecheck
 ## License
 
 MIT  2026 Helfas. See `LICENSE`. Third-party notices are in `THIRD-PARTY-NOTICES.md`.
+
+## Vault and clipboard access
+
+- AI Host enumerates vault file paths to resolve `@` mentions and to build the optional RAG index. The index is opt-in and can be disabled; when disabled, no vault-wide enumeration happens.
+- It reads individual notes only when you mention them or when an enabled index needs their text.
+- It reads or writes the system clipboard only when you use a copy or paste action in its own interface.
