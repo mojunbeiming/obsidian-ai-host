@@ -1,0 +1,18 @@
+{
+  "name": "sfc-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared core for the sfc-* Obsidian plugins. Bundled into each plugin at build time; never shipped as its own plugin. The value modules are Obsidian-free so `node --test` can import them; `aiSettings.ts` is the one exception and is excluded from the test build by its import.",
+  "type": "module",
+  "scripts": {
+    "build:test": "node esbuild.test.config.mjs",
+    "test": "node esbuild.test.config.mjs && node --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
+    "obsidian": "^1.8.0",
+    "typescript": "^5.6.0"
+  }
+}

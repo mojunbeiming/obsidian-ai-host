@@ -1,0 +1,2026 @@
+/* ===== SFC SHARED DESIGN SYSTEM - START (identical in every sfc-* stylesheet) ===== */
+/* ===========================================================================
+   Design tokens
+
+   The only place this plugin decides a distance, a radius, a duration or a
+   surface. Every rule below and every rule in the plugin-specific half reads
+   these; a literal px in a rule is a bug this project has already paid for once.
+
+   They live on :root rather than on the pane, and that is a fix rather than a
+   tidy-up: they used to be declared on .sfc-study / .sfc-todo / .sfc-modal only,
+   and an Obsidian modal is appended to document.body, so a modal whose wrapper
+   class was not one of the three had var(--sfc-gap) resolve to nothing.
+   border-radius: var(--sfc-radius) then becomes an invalid declaration, the
+   browser drops it, and the modal renders with square corners and no
+   transitions -- with nothing in the log to say why.
+
+   The rules are extracted from four design systems, and each one is here
+   because the same conclusion appeared in more than one of them:
+
+     * Semantic colour only, never a raw value (shadcn's styling rules).
+       Obsidian supplies the palette, so the plugins follow the active theme.
+     * One accent colour, used at most once per view as an action (daisyUI's
+       colour rules: primary is for the most important element, and once).
+       Everything else is a surface or a muted tone.
+     * Elevation is a hairline plus a surface step, never a shadow (HeroUI's
+       dark theme drops shadows entirely, and Obsidian's themes are where a
+       shadow stops matching anyway).
+     * Radius comes in two named sizes plus a pill (shadcn's single --radius
+       with derived steps, HeroUI's --radius / --field-radius pair). Controls
+       are --sfc-radius, cards are --sfc-radius-lg: 8px is a step on the 4px
+       grid, where a 1.5x scale would land on 9px and read as a third system.
+     * Type comes in three sizes and no more (lieflat-charts' FONT token block,
+       and its rule that a label which does not fit is hidden or given a hover
+       rather than shrunk). Anything below --font-ui-smaller is 10px or less,
+       which CJK text cannot carry.
+   =========================================================================== */
+
+:root {
+  /* Spacing. A 4px grid: 4, 8, 12, 16. Only these two appear in a gap. */
+  --sfc-gap: 12px;
+  --sfc-gap-sm: 6px;
+
+  /* Radius. Control / card / pill, and nothing in between. */
+  --sfc-radius: 6px;
+  --sfc-radius-lg: 8px;
+  --sfc-radius-pill: 999px;
+
+  /* Durations. A study pane is used for hours: anything above ~220ms stops
+     reading as responsiveness and starts reading as lag, so --sfc-slow is
+     reserved for the one moment the user is not waiting on anything (a theme
+     swap). --sfc-quick is the hover tier. */
+  --sfc-quick: 90ms;
+  --sfc-fast: 120ms;
+  --sfc-base: 180ms;
+  --sfc-slow: 320ms;
+
+  /* Three curves, and three only. --sfc-ease is the general one; --sfc-ease-out
+     is for anything that enters or moves (fast in, slow stop; lieflat's
+     quarticOut without the overshoot); --sfc-ease-in-out is for a surface that
+     changes colour, so neither end snaps. */
+  --sfc-ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --sfc-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --sfc-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Surfaces and the one hairline. Named after the role, like daisyUI's
+     base-100/200/300, so a rule says what it is rather than where it sits. */
+  --sfc-surface-panel: var(--background-primary-alt);
+  --sfc-surface-card: var(--background-primary);
+  --sfc-hairline: 1px solid var(--background-modifier-border);
+
+  /* One accent, and everything else is a step of it. --sfc-heat-5 is the accent
+     itself and 1-4 are descending mixes toward the panel: that is a density
+     ladder, not five colours (lieflat's mono ladder, whose rule is that
+     lightness IS the data). color-mix() against transparent is used rather than
+     an rgb variable, so a theme that only defines --interactive-accent still
+     gets a working heat map.
+
+     Each pair is a fallback then the real value. A runtime without color-mix()
+     drops the second declaration and keeps the first, so the grid degrades to
+     "a cell with no data" shapes rather than to an invalid declaration the
+     browser throws away -- which is what the old rgba-with-an-rgb-token
+     spelling did, and why every one of these washes has been invisible. */
+  --sfc-heat-1: var(--background-modifier-border);
+  --sfc-heat-2: var(--background-modifier-border);
+  --sfc-heat-3: var(--background-modifier-border);
+  --sfc-heat-4: var(--interactive-accent);
+  --sfc-heat-1: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  --sfc-heat-2: color-mix(in srgb, var(--interactive-accent) 36%, transparent);
+  --sfc-heat-3: color-mix(in srgb, var(--interactive-accent) 58%, transparent);
+  --sfc-heat-4: color-mix(in srgb, var(--interactive-accent) 78%, transparent);
+  --sfc-heat-5: var(--interactive-accent);
+
+  /* Chart height. A custom property so a container query can change it without
+     a second rule for the bar, the fill and the label. */
+  --sfc-chart-height: 64px;
+
+  /* The tinted status washes: the theme's own red/green/accent at 12%, so they
+     follow a theme change instead of matching only the theme they were picked
+     against. Fallback first, for the same reason as the heat ladder. */
+  --sfc-tint-red: transparent;
+  --sfc-tint-green: transparent;
+  --sfc-tint-accent: transparent;
+  --sfc-tint-red: color-mix(in srgb, var(--color-red) 12%, transparent);
+  --sfc-tint-green: color-mix(in srgb, var(--color-green) 12%, transparent);
+  --sfc-tint-accent: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+}
+
+/* ===========================================================================
+   Motion
+
+   THE OBJECT OF THIS BLOCK IS COMPOSITING, NOT DECORATION. Only opacity,
+   transform and colours are ever transitioned. width, height, padding, margin,
+   gap and grid-template-* are deliberately absent: each one relayouts on every
+   frame, and a pane whose root is the scroll container with a sticky header
+   turns a transitioning height into a header that slides under the pointer.
+
+   Everything animated lives inside a no-preference query, so a user who asked
+   the OS for reduced motion gets a still interface rather than a faster one.
+   That is the only correct reading of the preference, and it means these rules
+   need no reduce counterpart: they simply never apply.
+   =========================================================================== */
+
+/* The one entry animation. Every surface that appears (a page, a revealed
+   answer, a row) uses this keyframe, so the app has a single idea of what
+   "appearing" looks like. 4px, not 12: at this size the eye reads it as
+   settling rather than as a slide. */
+@keyframes sfc-enter-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* A list can ask to arrive in sequence. The delay is a *delay*, never a second
+     animation, so nothing can stack with the entry rule above -- and it stops
+     growing at the sixth child, so a fifty-row list never leaves its bottom half
+     waiting. A list opts in by putting sfc-stagger on its container.
+
+     This is here rather than in a plugin sheet because both a library of cards and
+     a list of tasks want it; the cell size of a grid is plugin-specific, a stagger
+     is not. */
+  .sfc-stagger > * { animation: sfc-enter-in var(--sfc-base) var(--sfc-ease-out) both; }
+  .sfc-stagger > :nth-child(1) { animation-delay: 0ms; }
+  .sfc-stagger > :nth-child(2) { animation-delay: 24ms; }
+  .sfc-stagger > :nth-child(3) { animation-delay: 48ms; }
+  .sfc-stagger > :nth-child(4) { animation-delay: 72ms; }
+  .sfc-stagger > :nth-child(5) { animation-delay: 96ms; }
+  .sfc-stagger > :nth-child(6) { animation-delay: 120ms; }
+
+  /* The hover/active tier. Colour only, at --sfc-quick: a 180ms colour change
+     reads as lag once the pointer is already moving. */
+  .sfc-btn,
+  .sfc-icon,
+  .sfc-tab,
+  .sfc-chip,
+  .sfc-badge,
+  .sfc-seg > .sfc-btn {
+    transition:
+      background-color var(--sfc-quick) var(--sfc-ease),
+      border-color var(--sfc-quick) var(--sfc-ease),
+      color var(--sfc-quick) var(--sfc-ease);
+  }
+  /* A press has to be felt, not just counted. */
+  .sfc-btn:active { transform: translateY(1px); }
+
+  /* A progress fill grows by scaleX, not by width. Width is a layout property,
+     and this bar sits inside a grid column that must not be re-measured for an
+     animation. All three surfaces that use .sfc-progress anchor their track at
+     the left, so one transform-origin serves all of them. */
+  .sfc-progress-fill {
+    transform-origin: left center;
+    transition: transform var(--sfc-base) var(--sfc-ease-out);
+  }
+
+  /* A heat cell is data, so it may fade between levels; it must not move. */
+  .sfc-heat-cell { transition: background-color var(--sfc-base) var(--sfc-ease); }
+
+  /* The reveal is the one moment in the study loop worth animating: it is what
+     the user is waiting for. */
+  .sfc-enter { animation: sfc-enter-in var(--sfc-base) var(--sfc-ease-out) both; }
+
+  /* A theme change is the one moment where every surface is meant to move at
+     once. sfc-theming is added for --sfc-slow and removed again by the host
+     plugin, so this is not a permanent transition tax on every repaint. */
+  body.sfc-theming,
+  body.sfc-theming .sfc-btn,
+  body.sfc-theming .sfc-chip,
+  body.sfc-theming .sfc-badge,
+  body.sfc-theming .sfc-panel,
+  body.sfc-theming .sfc-stat-card {
+    transition:
+      background-color var(--sfc-slow) var(--sfc-ease-in-out),
+      border-color var(--sfc-slow) var(--sfc-ease-in-out),
+      color var(--sfc-slow) var(--sfc-ease-in-out);
+  }
+}
+
+/* ===========================================================================
+   Focus
+
+   One rule for every control in the family. :focus-visible and not :focus, so a
+   mouse click on a checkbox does not leave a ring behind it. An outline is used
+   rather than a box-shadow because several of these controls already spend their
+   box-shadow on their own state (a habit cell that is today, a row that is the
+   keyboard cursor), and a focus ring that overwrote that would hide information
+   exactly when the user is driving the UI from the keyboard.
+
+   No transition: focus is not a hover. A ring that fades in is a ring the
+   keyboard user has already tabbed past.
+   =========================================================================== */
+
+.sfc-btn:focus-visible,
+.sfc-icon:focus-visible,
+.sfc-tab:focus-visible,
+.sfc-chip:focus-visible,
+.sfc-badge:focus-visible,
+.sfc-check:focus-visible,
+.sfc-panel-toggle:focus-visible,
+.sfc-tree-toggle:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+/* ===========================================================================
+   Shared chrome
+
+   Every plugin ships its OWN COPY of this block, and that duplication is
+   deliberate rather than lazy.
+
+   These class names are used by more than one plugin -- sfc-flashcards' pane
+   uses the button and empty-state styles, sfc-todo's pane uses the button, chip
+   and panel styles, and all the code blocks use the stat styles. Linking one
+   stylesheet from another would make a plugin depend on a sibling being
+   *installed* for its own UI to render, which breaks the one rule this whole
+   project is built on: every plugin works alone.
+
+   The copy is kept honest mechanically, not by discipline:
+   tools/check-ui-parity.mjs extracts this block out of every shipped stylesheet
+   and fails unless the copies are byte-identical. Both sheets land in the same
+   Obsidian cascade, so a difference here is not "a slightly different look" --
+   it is "whichever plugin loaded first decides the look". That is how
+   .sfc-stat-grid came to be minmax(120px) in one sheet and minmax(110px) in the
+   other, and how .sfc-icon ended up 4px in one and 3px in the other.
+   =========================================================================== */
+
+.sfc-muted { color: var(--text-muted); }
+.sfc-small { font-size: var(--font-ui-smaller); }
+.sfc-tag {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* An action row: a dialog's buttons, a toolbar, a row of tools. The divider is
+   what separates "the fields" from "the decision", and :has() is how one class
+   can be a plain button row everywhere else. This is also where a dialog bar
+   lives now: it used to be a second .sfc-bar, which silently overrode the first
+   one, so the dialog's spacing came from a rule about progress tracks. */
+.sfc-actions {
+  display: flex;
+  gap: var(--sfc-gap-sm);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.sfc-actions:has(> .sfc-btn) {
+  margin-top: 2px;
+  padding-top: var(--sfc-gap-sm);
+  border-top: var(--sfc-hairline);
+}
+/* A lone action fills its row. This is a *position* rule, not a button variant:
+   .sfc-primary used to carry flex: 1 itself, which stretched all of its uses --
+   including the ones sitting between two other buttons -- to the full width of
+   their row. */
+.sfc-actions > :only-child { flex: 1 1 auto; }
+
+.sfc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding: 6px 12px;
+  border: var(--sfc-hairline);
+  border-radius: var(--sfc-radius);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  line-height: 1.3;
+  /* Buttons are the one control that must never be squeezed: a progress button
+     crushed to 30px is a button nobody can read. They wrap instead. */
+  max-width: 100%;
+}
+.sfc-btn:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--background-modifier-border-hover);
+}
+.sfc-btn:disabled { opacity: 0.45; cursor: default; }
+.sfc-btn.sfc-small { padding: 3px 9px; font-size: var(--font-ui-smaller); }
+.sfc-btn kbd {
+  font-size: var(--font-ui-smaller);
+  opacity: 0.55;
+}
+/* The primary action. COLOUR ONLY -- see .sfc-actions > :only-child above for
+   the one thing allowed to make a button wide. At most one of these is visible
+   per view, which is what makes it read as "the thing to do" rather than as
+   decoration. */
+.sfc-primary {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.sfc-primary:hover {
+  background: var(--interactive-accent-hover);
+  border-color: var(--interactive-accent-hover);
+}
+
+.sfc-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  background: transparent;
+  border: none;
+  border-radius: var(--sfc-radius);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.sfc-icon:hover { color: var(--text-normal); }
+/* An icon inside a flex container collapses to nothing: an SVG's default sizing
+   is 100% of an auto-width box. setIcon writes a bare <svg>, so the size has to
+   be asserted here or the button renders empty -- an invisible control. */
+.sfc-icon svg { width: 1em; height: 1em; }
+
+/* A key cap. Sits inside a button as the keyboard shortcut for it, so it is the
+   one element in the family whose type must be monospaced: a proportional digit
+   beside a proportional letter makes a shortcut look like prose. */
+.sfc-kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--background-modifier-border);
+  border-bottom-width: 2px;
+  border-radius: var(--sfc-radius);
+  background: var(--background-secondary);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.4;
+}
+
+/* A chip and a badge are the same object at two weights: a chip is a fact you
+   may click, a badge is a fact you may not. Both are pills at
+   --font-ui-smaller; 10px was the alternative and CJK cannot carry it (lieflat's
+   minimum-size rule: hide it or give it a hover, do not shrink it).
+   Their *colour* is not shared, and deliberately so: sfc-flashcards tints a chip
+   to mean a card's novelty while sfc-todo outlines one to mean a task's default
+   date, and a single definition would have to pick one meaning for both. What is
+   shared is the geometry, so the two panes still read as one family. */
+.sfc-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--sfc-radius-pill);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+  max-width: 100%;
+}
+.sfc-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: var(--sfc-radius-pill);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+/* The segmented selector: question kind, prompt source, true/false, grading
+   mode, a calendar's range.
+
+   Selection is signalled by three things at once -- accent background, accent
+   border and weight -- so a theme that overrides any one of them still leaves
+   the other two. aria-pressed is set alongside the class, so assistive tech and
+   theme authors do not have to depend on the class name at all. The descendant
+   selector rather than the single class is part of the fix, not a style
+   preference: it outranks the host's own button rules. */
+.sfc-seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.sfc-seg > .sfc-btn { flex: 0 1 auto; }
+.sfc-seg > .sfc-btn.is-active,
+.sfc-seg > .sfc-btn[aria-pressed="true"] {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+.sfc-seg > .sfc-btn.is-active:hover,
+.sfc-seg > .sfc-btn[aria-pressed="true"]:hover {
+  background: var(--interactive-accent-hover);
+  border-color: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+}
+/* A hover on the *unselected* half is a plain surface change: the accent is
+   reserved for what is actually selected. */
+.sfc-seg > .sfc-btn:not(.is-active):not([aria-pressed="true"]):hover {
+  background: var(--background-modifier-hover);
+}
+/* A deprecated alias for the selected button. Kept so a theme or a stored
+   aria-pressed-less name still has a hook, but it is defined once, here, and it
+   uses the same three signals as .is-active above. */
+.sfc-kind-active {
+  background: var(--background-modifier-border);
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.sfc-empty {
+  margin-top: 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  color: var(--text-muted);
+}
+.sfc-empty h4 {
+  margin: 0;
+  font-size: var(--font-ui-medium);
+  color: var(--text-normal);
+}
+.sfc-empty .sfc-actions { justify-content: center; }
+
+.sfc-divider {
+  border: none;
+  border-top: var(--sfc-hairline);
+  margin: 2px 0;
+}
+
+.sfc-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sfc-gap-sm);
+  min-width: 0;
+}
+
+.sfc-list { display: flex; flex-direction: column; gap: 2px; }
+
+/* ===========================================================================
+   Panels and statistic cards
+
+   The pane is a column of panels at every width; a wider pane only gets more
+   columns of the same panel. Nothing here hides content inside a panel.
+   =========================================================================== */
+
+.sfc-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--sfc-surface-panel);
+  border: var(--sfc-hairline);
+  border-radius: var(--sfc-radius);
+  overflow: hidden;
+}
+.sfc-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-bottom: var(--sfc-hairline);
+}
+.sfc-panel-title {
+  font-weight: 600;
+  font-size: var(--font-ui-small);
+  min-width: 0;
+}
+.sfc-panel-actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sfc-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+/* Collapsible panel sections: a short pane should be able to hide the blocks the
+   user is not reading right now instead of forcing a long scroll. */
+.sfc-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--sfc-radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.sfc-panel-toggle:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.sfc-panel-body.sfc-collapsed { display: none; }
+
+.sfc-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+.sfc-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: var(--sfc-hairline);
+  border-radius: var(--sfc-radius-lg);
+  background: var(--sfc-surface-card);
+  min-width: 0;
+}
+/* The number is the content and the label explains it, so the number is the only
+   thing in the card that is not muted. tabular-nums keeps a column of counts
+   from shivering as the digits change width. */
+.sfc-stat-card-value {
+  font-size: var(--font-ui-large);
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.sfc-stat-card-label { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.sfc-stat-card-hint { color: var(--text-faint); font-size: var(--font-ui-smaller); }
+
+/* ===========================================================================
+   A horizontal measure: .sfc-bar is the track, .sfc-bar-fill is the value
+
+   One component, because "a horizontal measure with something written beside it"
+   is what all of its surfaces are: a goal's progress in a row's meta line, a
+   streak, and a day's column in the trend chart (where the measure is a height).
+   The dimensions come from the context; the semantics do not.
+
+   This block used to be defined *after* a different .sfc-bar -- a dialog action
+   row -- which silently overrode it. A duplicate selector does not warn, it just
+   wins. The dialog row is .sfc-actions:has(> .sfc-btn) now.
+   =========================================================================== */
+
+.sfc-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sfc-gap-sm);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.sfc-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: var(--sfc-radius-pill);
+  background: var(--interactive-accent);
+}
+.sfc-bar-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A progress track. Also the shared parent of .sfc-bar-fill in the study pane
+   and the wrong-answer row, where the fill is sized by an inline custom
+   property. overflow: hidden is what turns the fill's right edge into the
+   track's right edge instead of a stub sticking out of it. */
+.sfc-progress {
+  position: relative;
+  flex: 1 1 100%;
+  min-width: 0;
+  height: 5px;
+  background: var(--background-modifier-border);
+  border-radius: var(--sfc-radius-pill);
+  overflow: hidden;
+}
+.sfc-progress-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  border-radius: var(--sfc-radius-pill);
+  background: var(--interactive-accent);
+}
+.sfc-progress-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ===========================================================================
+   A heat grid: one cell per day, five levels of one accent
+
+   The cell size is deliberately not a token here: a habit grid and a
+   contribution grid want different cells, that is the only thing they disagree
+   about, and it comes from the plugin sheet.
+   =========================================================================== */
+
+.sfc-heatmap-scroll { overflow-x: auto; padding-bottom: 2px; }
+.sfc-heatmap { display: flex; gap: 3px; width: max-content; }
+.sfc-heat-week { display: flex; flex-direction: column; gap: 3px; }
+.sfc-heat-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--sfc-radius);
+  background: var(--background-modifier-border);
+  cursor: pointer;
+}
+.sfc-heat-pad,
+.sfc-heat-future { background: transparent; cursor: default; }
+.sfc-heat-level-0 { background: var(--background-modifier-border); }
+.sfc-heat-level-1 { background: var(--sfc-heat-1); }
+.sfc-heat-level-2 { background: var(--sfc-heat-2); }
+.sfc-heat-level-3 { background: var(--sfc-heat-3); }
+.sfc-heat-level-4 { background: var(--sfc-heat-5); }
+.sfc-heat-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: var(--text-muted);
+}
+.sfc-heat-scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+}
+
+/* ===========================================================================
+   A bar chart: one column per bucket, height by custom property
+
+   The bar has no transition. A chart that animates its bars is a chart that
+   relayouts on every frame of the animation, and a dashboard is exactly where
+   the user is most likely to be scrolling while it renders.
+   =========================================================================== */
+
+.sfc-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: var(--sfc-chart-height);
+  padding-top: 4px;
+}
+.sfc-chart-bar {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  min-width: 0;
+  height: 100%;
+}
+.sfc-chart-fill {
+  width: 100%;
+  min-height: 2px;
+  height: var(--sfc-chart-height-value, 0%);
+  border-radius: var(--sfc-radius) var(--sfc-radius) 0 0;
+  background: var(--interactive-accent);
+}
+.sfc-chart-label {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+/* ===========================================================================
+   The dashboard grid
+
+   One column by default; the wide query only adds columns. align-items: start is
+   not cosmetic: without it the second column's panel stretches to the height of
+   the first, and a two-panel dashboard ends up with one panel of empty space.
+   =========================================================================== */
+
+.sfc-home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  align-items: start;
+}
+
+/* ===========================================================================
+   AI panels
+
+   Shared because both plugins draw one: sfc-flashcards reads cards out of an
+   image and sfc-todo reads tasks out of a sentence. They are the only places in
+   either plugin that wait on something slow, so the states below are about
+   saying what is happening rather than about decoration.
+
+   `--sfc-tint-accent` for the drop target: one accent, used once, marking the
+   thing to do. The dashed border rather than a shadow because a shadow in a
+   themed pane is the surface that most often matches the wrong theme.
+   =========================================================================== */
+
+.sfc-ai-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sfc-gap-sm);
+  min-width: 0;
+}
+.sfc-ai-drop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sfc-gap-sm);
+  padding: 14px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--sfc-radius-lg);
+  background: var(--background-secondary);
+  text-align: center;
+}
+.sfc-ai-drop-active {
+  border-color: var(--interactive-accent);
+  border-style: solid;
+  background: var(--sfc-tint-accent);
+}
+.sfc-ai-drop-title { color: var(--text-normal); font-size: var(--font-ui-small); }
+.sfc-ai-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--sfc-gap-sm);
+  min-width: 0;
+}
+.sfc-ai-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  min-width: 0;
+}
+.sfc-ai-thumb-img {
+  width: 100%;
+  max-height: 72px;
+  object-fit: cover;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--sfc-radius);
+}
+.sfc-ai-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sfc-gap-sm);
+}
+/* The source picker: text, selection, or pictures. A segmented row rather than
+   a dropdown because switching is cheap and the current source has to stay
+   visible while the form is read. */
+.sfc-ai-source { flex-wrap: wrap; }
+.sfc-ai-text {
+  width: 100%;
+  min-height: 96px;
+  padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--sfc-radius);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-text);
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+  resize: vertical;
+}
+.sfc-ai-text:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 1px; }
+/* The verdict, shown above the form it filled: accent-tinted rather than warning
+   coloured, because it is information the user asked for, not a problem. */
+.sfc-ai-recognized {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: var(--sfc-radius);
+  background: var(--sfc-tint-accent);
+}.sfc-ai-kind-picker { flex-wrap: wrap; }
+.sfc-ai-problem {
+  padding: 8px 10px;
+  border-left: 3px solid var(--color-orange);
+  border-radius: var(--sfc-radius);
+  background: var(--sfc-tint-accent);
+  color: var(--text-normal);
+}
+.sfc-ai-preview,
+.sfc-plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sfc-gap-sm);
+  min-width: 0;
+}
+.sfc-ai-row,
+.sfc-plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--sfc-gap-sm);
+  padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--sfc-radius);
+  background: var(--background-primary);
+}
+.sfc-ai-row-info { flex: 1 1 220px; min-width: 0; }
+.sfc-ai-row-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.sfc-ai-row-tools { display: flex; gap: 4px; flex: 0 0 auto; }
+/* The connectivity line. Colour is not the only signal -- the text says
+   "已连通" or "未连通" -- because a status indicator that differs only in hue is
+   unreadable for the ~8% of readers who cannot separate these two. */
+.sfc-ai-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sfc-gap-sm);
+  min-width: 0;
+}
+.sfc-ai-status-ok { color: var(--color-green); }
+.sfc-ai-status-bad { color: var(--color-red); }
+.sfc-ai-test-ok .sfc-muted,
+.sfc-ai-test-ok.sfc-muted { color: var(--color-green); }
+.sfc-ai-test-failed .sfc-muted,
+.sfc-ai-test-failed.sfc-muted { color: var(--color-red); }
+.sfc-plan-when { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.sfc-plan-details { flex: 1 1 260px; min-width: 0; }
+.sfc-plan-why { flex: 1 1 100%; min-width: 0; }
+/* The settings section's "advanced" fold. A native `<details>` rather than a
+   toggle bound to state: where the user is looking is not a setting, and an
+   expanded section that collapsed itself on every redraw would be one. */
+.sfc-ai-advanced {
+  margin: var(--sfc-gap-sm) 0 var(--sfc-gap) 0;
+  padding: var(--sfc-gap-sm) var(--sfc-gap);
+  border: var(--sfc-hairline);
+  border-radius: var(--sfc-radius);
+  background: var(--background-secondary);
+}
+.sfc-ai-advanced > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  list-style: revert;
+}
+.sfc-ai-advanced > summary:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.sfc-ai-advanced-body { padding-top: var(--sfc-gap-sm); }
+/* The key field, marked so its length is not the only sign of what it holds. */
+.sfc-ai-key { font-family: var(--font-monospace); }
+/* A live microphone has to be obvious: the button is the only sign it is on, and
+   a silent recorder is indistinguishable from one listening without being asked. */
+.sfc-recording {
+  background: var(--background-modifier-error);
+  border-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+/* The shared modal chrome. Prompts, confirmations and choosers all render
+   through `sdk/src/uiDialogs.ts`, so the rules belong to every plugin rather
+   than to whoever wrote the dialog first -- and they land in one cascade. */
+.sfc-modal-message {
+  margin: 0 0 var(--sfc-gap) 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.sfc-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sfc-gap-sm);
+  margin-top: var(--sfc-gap);
+}
+.sfc-modal-choices { display: flex; flex-direction: column; gap: var(--sfc-gap-sm); }
+.sfc-modal-choices > .sfc-btn { justify-content: flex-start; width: 100%; text-align: left; }
+.sfc-modal-choice-index { color: var(--text-faint); font-family: var(--font-monospace); }
+/* ===== SFC SHARED DESIGN SYSTEM - END ===== */
+
+/* ===== sfc-ai host chrome =====================================================
+   Only what the chat pane itself draws. The shared block above supplies the
+   tokens, the panel chrome and the settings classes, so this tail stays small
+   and every selector here is emitted by `src/chatView.ts`.
+   ========================================================================== */
+
+.sfc-ai-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sfc-gap);
+  height: 100%;
+  padding: var(--sfc-gap);
+}
+
+.sfc-ai-empty {
+  margin: auto;
+  color: var(--text-muted);
+  text-align: center;
+  padding: var(--sfc-gap);
+}
+
+.sfc-ai-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sfc-gap-sm);
+  padding: var(--sfc-gap-sm);
+  border: 1px solid var(--sfc-hairline);
+  border-radius: var(--sfc-radius);
+}
+
+.sfc-ai-msg {
+  padding: var(--sfc-gap-sm) var(--sfc-gap);
+  border-radius: var(--sfc-radius);
+  background: var(--sfc-surface-card);
+}
+
+.sfc-ai-msg-user {
+  background: var(--sfc-tint-accent);
+}
+
+.sfc-ai-msg-assistant {
+  background: var(--sfc-surface-panel);
+}
+
+.sfc-ai-msg-role {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  margin-bottom: 0.25em;
+}
+
+.sfc-ai-msg-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.sfc-ai-msg-meta {
+  margin-top: 0.35em;
+  font-size: 0.75em;
+  color: var(--text-muted);
+}
+
+.sfc-ai-reasoning {
+  margin: 0.35em 0;
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.sfc-ai-reasoning-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 0.25em;
+}
+
+/* The composer is a column, and this declaration is the one that decides it.
+   It used to be a flex *row* with `align-items: flex-end`, which put the chip
+   row, the mode toggles, the textarea, the action column and the stats line side
+   by side in one strip -- while the v2/v3 block below wrote its children as if
+   the container were a column (`margin-bottom` on the toggles, `margin-top` on
+   the stats, a row of actions). Both cannot be true; the visible result was a
+   cramped strip with the numbers floated off to the right of 停止. */
+.sfc-ai-composer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex: 0 0 auto;
+  gap: var(--sfc-gap-sm);
+}
+
+.sfc-ai-input {
+  flex: 1 1 auto;
+  min-height: 4.5em;
+  resize: vertical;
+  font-family: inherit;
+  color: var(--text-normal);
+  background: var(--background-modifier-form-field);
+  caret-color: var(--text-normal);
+}
+
+.sfc-ai-input:focus {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+.sfc-ai-send,
+.sfc-ai-stop {
+  flex: 0 0 auto;
+}
+
+/* An empty composer's send button. `disabled` is what makes it unclickable;
+   this is what makes it *look* unclickable under a theme that styles its own
+   buttons -- the class was being emitted with no rule behind it. */
+.sfc-ai-send-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* While a reply streams the composer stays usable -- the next turn can be typed
+   during it -- so "busy" is a hairline, not a disable. */
+.sfc-ai-input-busy {
+  border-color: var(--interactive-accent);
+}
+
+/* ===== sfc-ai v2/v3 surface ==================================================
+   Chips, picker, tool cards and the apply diff. Every selector here is emitted
+   by `src/chatView.ts`, `src/applyModal.ts`, `src/settingsTab.ts` or
+   `src/templateSuggest.ts`; the shared block above still owns the tokens.
+   ========================================================================== */
+
+.sfc-ai-search {
+  flex: 0 1 10rem;
+  min-width: 6rem;
+}
+
+.sfc-ai-chips {
+  display: flex;
+  gap: var(--sfc-gap-sm);
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sfc-ai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.1em 0.4em;
+  border: 1px solid var(--sfc-hairline);
+  border-radius: var(--sfc-radius-pill);
+  background: var(--sfc-surface-card);
+  font-size: 0.85em;
+}
+
+.sfc-ai-chip-x {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0 0.15em;
+}
+
+.sfc-ai-toggle {
+  flex: 0 0 auto;
+  border: 1px solid var(--sfc-hairline);
+  border-radius: var(--sfc-radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sfc-ai-toggle-on {
+  background: var(--sfc-tint-accent);
+  color: var(--text-normal);
+  border-color: var(--sfc-tint-accent);
+}
+
+.sfc-ai-picker {
+  position: relative;
+  max-height: 12rem;
+  overflow-y: auto;
+  border: 1px solid var(--sfc-hairline);
+  border-radius: var(--sfc-radius);
+  background: var(--sfc-surface-panel);
+}
+
+.sfc-ai-picker-row {
+  padding: 0.25em var(--sfc-gap-sm);
+  cursor: pointer;
+  font-size: 0.9em;
+}
+
+.sfc-ai-picker-active {
+  background: var(--sfc-tint-accent);
+}
+
+/* One row: the attach button on the left, then the permission and model pickers
+   and the send/stop pair on the right. */
+.sfc-ai-composer-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sfc-gap-sm);
+}
+.sfc-ai-composer-actions .sfc-ai-send { margin-left: auto; }
+
+.sfc-ai-msg-mentions {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  margin-bottom: 0.25em;
+}
+
+.sfc-ai-msg-tool {
+  background: var(--sfc-surface-panel);
+  border-left: 3px solid var(--sfc-tint-green);
+}
+
+.sfc-ai-tool {
+  border: 1px solid var(--sfc-hairline);
+  border-radius: var(--sfc-radius);
+  padding: var(--sfc-gap-sm);
+  background: var(--sfc-surface-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+}
+
+.sfc-ai-tool-head {
+  font-weight: 600;
+}
+
+.sfc-ai-tool-args,
+.sfc-ai-tool-result {
+  margin: 0;
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 0.85em;
+}
+
+.sfc-ai-tool-actions {
+  display: flex;
+  gap: var(--sfc-gap-sm);
+}
+
+.sfc-ai-diff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sfc-gap-sm);
+}
+
+.sfc-ai-diff-head {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.sfc-ai-diff-block {
+  border: 1px solid var(--sfc-hairline);
+  border-radius: var(--sfc-radius);
+  padding: var(--sfc-gap-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+}
+
+.sfc-ai-diff-title {
+  font-weight: 600;
+}
+
+.sfc-ai-diff-original,
+.sfc-ai-diff-incoming {
+  margin: 0;
+  padding: var(--sfc-gap-sm);
+  border-radius: var(--sfc-radius);
+  white-space: pre-wrap;
+  max-height: 16rem;
+  overflow: auto;
+}
+
+.sfc-ai-diff-original {
+  background: var(--sfc-tint-red);
+}
+
+.sfc-ai-diff-incoming {
+  background: var(--sfc-tint-green);
+}
+
+.sfc-ai-diff-actions {
+  display: flex;
+  gap: var(--sfc-gap-sm);
+  flex-wrap: wrap;
+}
+
+.sfc-ai-diff-chosen {
+  border-color: var(--interactive-accent);
+  box-shadow: inset 0 0 0 1px var(--interactive-accent);
+}
+
+/* ===== sfc-ai run log ========================================================
+   The durable trajectory view: list of runs, step timeline, error blocks.
+   ========================================================================== */
+
+.sfc-run {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: var(--sfc-gap-sm);
+}
+
+.sfc-run-toolbar {
+  display: flex;
+  gap: var(--sfc-gap-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.sfc-run-search {
+  flex: 1 1 10rem;
+  min-width: 6rem;
+}
+
+.sfc-run-refresh {
+  flex: 0 0 auto;
+}
+
+.sfc-run-body {
+  display: flex;
+  flex: 1 1 auto;
+  gap: var(--sfc-gap-sm);
+  min-height: 0;
+}
+
+.sfc-run-list {
+  flex: 0 0 40%;
+  overflow-y: auto;
+  border: 1px solid var(--sfc-hairline);
+  border-radius: var(--sfc-radius);
+}
+
+.sfc-run-row {
+  padding: var(--sfc-gap-sm);
+  border-bottom: 1px solid var(--sfc-hairline);
+  cursor: pointer;
+}
+
+.sfc-run-row-active {
+  background: var(--sfc-tint-accent);
+}
+
+.sfc-run-badge {
+  display: inline-block;
+  padding: 0 0.4em;
+  border-radius: var(--sfc-radius-pill);
+  font-size: 0.75em;
+  margin-right: 0.4em;
+}
+
+.sfc-run-status-ok {
+  background: var(--sfc-tint-green);
+}
+
+.sfc-run-status-failed {
+  background: var(--sfc-tint-red);
+}
+
+.sfc-run-status-running {
+  background: var(--sfc-tint-accent);
+}
+
+.sfc-run-title {
+  font-weight: 600;
+}
+
+.sfc-run-meta {
+  color: var(--text-muted);
+  font-size: 0.8em;
+}
+
+.sfc-run-summary {
+  margin-top: 0.25em;
+}
+
+.sfc-run-empty {
+  padding: var(--sfc-gap);
+  color: var(--text-muted);
+}
+
+.sfc-run-detail {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--sfc-gap-sm);
+  border: 1px solid var(--sfc-hairline);
+  border-radius: var(--sfc-radius);
+}
+
+.sfc-run-head h3 {
+  margin-top: 0;
+}
+
+.sfc-run-actions {
+  display: flex;
+  gap: var(--sfc-gap-sm);
+  margin: var(--sfc-gap-sm) 0;
+  flex-wrap: wrap;
+}
+
+.sfc-run-step {
+  border: 1px solid var(--sfc-hairline);
+  border-radius: var(--sfc-radius);
+  margin-bottom: 0.35em;
+  padding: 0.25em 0.4em;
+}
+
+.sfc-run-step-head {
+  display: flex;
+  gap: 0.4em;
+  align-items: baseline;
+  cursor: pointer;
+}
+
+.sfc-run-step-title {
+  flex: 1 1 auto;
+}
+
+.sfc-run-step-detail {
+  margin: 0.35em 0 0;
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 0.85em;
+}
+
+.sfc-run-error {
+  border: 1px solid var(--sfc-hairline);
+  border-left: 3px solid var(--text-error);
+  border-radius: var(--sfc-radius);
+  padding: var(--sfc-gap-sm);
+  margin-bottom: 0.5em;
+}
+
+.sfc-run-error-title {
+  color: var(--text-error);
+  font-weight: 600;
+}
+
+.sfc-run-statusbar {
+  cursor: pointer;
+}
+
+/* ===== SFC AI WORKBENCH (v3: explicit row layout, rail, resize) ===== */
+
+/*
+ * `.view-content` is a column in Obsidian's stylesheet, so the row layout lives
+ * on this explicit wrapper rather than on `contentEl`. Putting `display:flex`
+ * there lost the cascade and stacked the sidebar above the thread.
+ */
+.sfc-ai-root {
+  --sfc-ai-side-width: 260px;
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sfc-ai-side-host {
+  position: relative;
+  flex: 0 0 var(--sfc-ai-side-width);
+  width: var(--sfc-ai-side-width);
+  min-width: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--sfc-hairline);
+  background: var(--background-secondary);
+  /* No transition on `flex-basis`/`width`: those are layout properties, so the
+     whole pane -- message list included -- was relaid out on every frame of the
+     collapse -- and the rail switch is instant for the same reason a scroll
+     container must not animate its height: the movement *is* the jump. The
+     labels it reveals are simply shown. */
+  transition: border-color var(--sfc-fast) var(--sfc-ease);
+}
+
+/* DSH rule: collapsed is a fixed 48px control rail, never a zero-width track. */
+.sfc-ai-root.sfc-ai-collapsed .sfc-ai-side-host,
+.sfc-ai-root.sfc-ai-narrow .sfc-ai-side-host {
+  flex-basis: 48px;
+  width: 48px;
+}
+
+.sfc-ai-root.sfc-ai-collapsed .sfc-ai-resize,
+.sfc-ai-root.sfc-ai-narrow .sfc-ai-resize {
+  display: none;
+}
+
+.sfc-ai-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 3;
+}
+
+.sfc-ai-resize:hover {
+  background: var(--interactive-accent);
+  opacity: 0.35;
+}
+
+.sfc-ai-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sfc-gap-sm);
+  height: 100%;
+  min-height: 0;
+  padding: var(--sfc-gap-sm);
+  overflow: hidden;
+}
+
+.sfc-ai-side-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sfc-gap-sm);
+  min-height: 28px;
+}
+
+.sfc-ai-side-logo {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8em;
+  height: 1.8em;
+  border-radius: var(--sfc-radius);
+  background: var(--sfc-tint-accent);
+  color: var(--text-on-accent);
+  font-weight: 700;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.sfc-ai-side-name {
+  flex: 1 1 auto;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sfc-ai-side-collapse {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+
+.sfc-ai-new {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  width: 100%;
+  text-align: left;
+  border: 1px dashed var(--sfc-hairline);
+  border-radius: var(--sfc-radius);
+  background: transparent;
+  color: var(--text-normal);
+  padding: 0.35em 0.5em;
+  cursor: pointer;
+}
+
+.sfc-ai-new:hover {
+  background: var(--background-modifier-hover);
+}
+
+.sfc-ai-side-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  min-width: 0;
+}
+
+.sfc-ai-side-search-icon {
+  flex: 0 0 auto;
+  padding: 0.15em 0.3em;
+}
+
+.sfc-ai-side-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.sfc-ai-side-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  /* DSH: reserve the gutter so opening a group cannot shift every row. */
+  scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sfc-ai-side-empty {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  padding: var(--sfc-gap-sm);
+  line-height: 1.5;
+}
+
+.sfc-ai-side-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin: 0.6em 0.25em 0.15em;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.sfc-ai-side-head-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sfc-ai-side-count {
+  color: var(--text-faint);
+}
+
+.sfc-ai-side-head-action {
+  margin-left: auto;
+  opacity: 0;
+}
+
+.sfc-ai-side-head:hover .sfc-ai-side-head-action {
+  opacity: 1;
+}
+
+.sfc-ai-side-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.3em 0.45em;
+  border-radius: var(--sfc-radius);
+  cursor: pointer;
+}
+
+.sfc-ai-side-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.sfc-ai-side-item-active {
+  background: var(--background-modifier-active-hover, var(--background-modifier-hover));
+}
+
+.sfc-ai-side-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sfc-ai-side-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-ui-small);
+}
+
+.sfc-ai-side-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sfc-ai-side-pin {
+  color: var(--text-accent);
+}
+
+.sfc-ai-side-actions {
+  display: none;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.sfc-ai-side-item:hover .sfc-ai-side-actions,
+.sfc-ai-side-item-active .sfc-ai-side-actions {
+  display: flex;
+}
+
+.sfc-ai-side-blank .sfc-ai-side-meta {
+  color: var(--text-faint);
+}
+
+.sfc-ai-side-footer {
+  display: flex;
+  gap: var(--sfc-gap-sm);
+  border-top: 1px solid var(--sfc-hairline);
+  padding-top: var(--sfc-gap-sm);
+}
+
+.sfc-ai-side-footer .sfc-ai-ghost {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35em;
+}
+
+.sfc-ai-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  line-height: 1;
+}
+
+/* --- rail states: labels leave, controls stay (same handlers, same order) --- */
+
+.sfc-ai-root.sfc-ai-collapsed .sfc-ai-side-name,
+.sfc-ai-root.sfc-ai-collapsed .sfc-ai-label,
+.sfc-ai-root.sfc-ai-collapsed .sfc-ai-side-search,
+.sfc-ai-root.sfc-ai-collapsed .sfc-ai-side-list,
+.sfc-ai-root.sfc-ai-collapsed .sfc-ai-side-collapse,
+.sfc-ai-root.sfc-ai-narrow .sfc-ai-side-name,
+.sfc-ai-root.sfc-ai-narrow .sfc-ai-label,
+.sfc-ai-root.sfc-ai-narrow .sfc-ai-side-search,
+.sfc-ai-root.sfc-ai-narrow .sfc-ai-side-list,
+.sfc-ai-root.sfc-ai-narrow .sfc-ai-side-collapse {
+  display: none;
+}
+
+.sfc-ai-root.sfc-ai-collapsed .sfc-ai-sidebar,
+.sfc-ai-root.sfc-ai-narrow .sfc-ai-sidebar {
+  align-items: center;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.sfc-ai-root.sfc-ai-collapsed .sfc-ai-new,
+.sfc-ai-root.sfc-ai-narrow .sfc-ai-new,
+.sfc-ai-root.sfc-ai-collapsed .sfc-ai-side-search-icon,
+.sfc-ai-root.sfc-ai-collapsed .sfc-ai-side-footer .sfc-ai-ghost,
+.sfc-ai-root.sfc-ai-narrow .sfc-ai-side-search-icon,
+.sfc-ai-root.sfc-ai-narrow .sfc-ai-side-footer .sfc-ai-ghost {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  justify-content: center;
+  padding: 0;
+}
+
+.sfc-ai-root.sfc-ai-collapsed .sfc-ai-side-brand,
+.sfc-ai-root.sfc-ai-narrow .sfc-ai-side-brand {
+  justify-content: center;
+}
+
+/* ------------------------------------------------------------------ main --- */
+
+.sfc-ai-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.sfc-ai-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sfc-gap-sm);
+  padding: 0.35em 0.6em;
+  border-bottom: 1px solid var(--sfc-hairline);
+  flex: 0 0 auto;
+}
+
+.sfc-ai-ghost {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  padding: 0.15em 0.4em;
+  border-radius: var(--sfc-radius);
+  cursor: pointer;
+  font-size: var(--font-ui-smaller);
+}
+
+.sfc-ai-ghost:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.sfc-ai-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 34%;
+  cursor: text;
+}
+
+.sfc-ai-tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.sfc-ai-tab {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  padding: 0.2em 0.7em;
+  border-radius: var(--sfc-radius-pill);
+  cursor: pointer;
+}
+
+.sfc-ai-tab-active {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.sfc-ai-topbar-spacer {
+  flex: 1 1 auto;
+}
+
+.sfc-ai-thread {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sfc-ai-message-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.sfc-ai-plan-panel {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--sfc-hairline);
+  padding: var(--sfc-gap-sm) var(--sfc-gap);
+  background: var(--background-secondary);
+  font-size: var(--font-ui-small);
+}
+
+.sfc-ai-plan-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+}
+
+.sfc-ai-plan-title {
+  font-weight: 600;
+}
+
+.sfc-ai-plan-status {
+  color: var(--text-muted);
+}
+
+.sfc-ai-plan-status-done {
+  color: var(--text-success, var(--text-accent));
+}
+
+/* Planning and running are real states the template emits
+   (`sfc-ai-plan-status-${state.status}`) and they used to fall through to the
+   muted base rule, so "still working" and "not started yet" looked identical.
+   The label announces the step count either way: colour is the second signal,
+   never the only one. */
+.sfc-ai-plan-status-planning {
+  color: var(--text-muted);
+}
+
+.sfc-ai-plan-status-running {
+  color: var(--text-accent);
+}
+
+.sfc-ai-plan-status-failed,
+.sfc-ai-plan-status-budget_exceeded {
+  color: var(--text-error);
+}
+
+.sfc-ai-plan-note {
+  color: var(--text-muted);
+  margin-top: 0.25em;
+}
+
+.sfc-ai-plan-body {
+  margin: 0.35em 0 0;
+  max-height: 8rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 0.85em;
+}
+
+.sfc-ai-plan-meta {
+  color: var(--text-muted);
+  margin-top: 0.25em;
+  font-size: var(--font-ui-smaller);
+}
+
+.sfc-ai-plan-actions {
+  display: flex;
+  gap: 0.4em;
+  margin-top: 0.4em;
+  flex-wrap: wrap;
+}
+
+.sfc-ai-approval {
+  margin-top: 0.5em;
+  border: 1px solid var(--text-error);
+  border-radius: var(--sfc-radius);
+  padding: var(--sfc-gap-sm);
+  background: var(--background-primary);
+}
+
+.sfc-ai-approval-title {
+  font-weight: 600;
+}
+
+.sfc-ai-approval-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: 0.35em;
+}
+
+.sfc-ai-trace {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sfc-gap);
+}
+
+.sfc-ai-trace-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  margin-bottom: 0.35em;
+}
+
+.sfc-ai-trace-title {
+  font-weight: 600;
+}
+
+.sfc-ai-trace-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: 0.5em;
+}
+
+.sfc-ai-floating {
+  position: absolute;
+  right: var(--sfc-gap-sm);
+  top: var(--sfc-gap-sm);
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--sfc-hairline);
+  border-radius: var(--sfc-radius-pill);
+  background: var(--background-primary);
+  opacity: 0;
+  transition: opacity var(--sfc-fast) var(--sfc-ease);
+}
+
+.sfc-ai-thread:hover .sfc-ai-floating {
+  opacity: 1;
+}
+
+.sfc-ai-composer-host {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--sfc-hairline);
+  padding: var(--sfc-gap-sm) var(--sfc-gap);
+}
+
+.sfc-ai-toggles {
+  display: flex;
+  gap: var(--sfc-gap-sm);
+  flex-wrap: wrap;
+  margin-bottom: 0.35em;
+}
+
+.sfc-ai-input-row {
+  display: flex;
+  gap: var(--sfc-gap-sm);
+  align-items: flex-end;
+}
+
+.sfc-ai-input-row .sfc-ai-input {
+  flex: 1 1 auto;
+}
+
+.sfc-ai-plus {
+  font-size: var(--font-ui-medium);
+  line-height: 1;
+}
+
+.sfc-ai-permission,
+.sfc-ai-provider {
+  max-width: 9em;
+}
+
+.sfc-ai-banner {
+  display: none;
+  margin-top: 0.35em;
+  padding: 0.35em 0.6em;
+  border-radius: var(--sfc-radius);
+  font-size: var(--font-ui-smaller);
+}
+
+.sfc-ai-banner-visible {
+  display: block;
+  background: var(--sfc-tint-accent);
+  color: var(--text-normal);
+}
+
+.sfc-ai-banner-danger.sfc-ai-banner-visible {
+  background: var(--sfc-tint-red);
+  color: var(--text-error);
+  border: 1px solid var(--text-error);
+}
+
+.sfc-ai-stats {
+  margin-top: 0.3em;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.sfc-ai-hero {
+  margin: auto;
+  padding: var(--sfc-gap);
+  max-width: 32rem;
+  text-align: center;
+}
+
+.sfc-ai-hero-title {
+  font-size: 1.15em;
+  font-weight: 600;
+}
+
+.sfc-ai-hero-sub {
+  color: var(--text-muted);
+  margin: 0.4em 0 1em;
+  line-height: 1.6;
+}
+
+.sfc-ai-hero-examples {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sfc-gap-sm);
+}
+
+.sfc-ai-hero-example {
+  text-align: left;
+  border: 1px solid var(--sfc-hairline);
+  border-radius: var(--sfc-radius);
+  background: var(--background-primary);
+  padding: 0.5em 0.7em;
+  cursor: pointer;
+  color: var(--text-normal);
+}
+
+.sfc-ai-hero-example:hover {
+  background: var(--background-modifier-hover);
+}
+
+.sfc-ai-msg-badge {
+  margin-left: 0.4em;
+  padding: 0 0.35em;
+  border-radius: var(--sfc-radius-pill);
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.sfc-ai-msg-mention {
+  display: inline-block;
+  margin-right: 0.35em;
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+}
+
+.sfc-ai-tool-inline {
+  font-size: var(--font-ui-smaller);
+}
+
+.sfc-ai-msg-actions {
+  display: none;
+  gap: 2px;
+  margin-top: 0.3em;
+}
+
+.sfc-ai-msg:hover .sfc-ai-msg-actions {
+  display: flex;
+}
+
+.sfc-ai-msg-retracted {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.sfc-ai-msg-superseded {
+  opacity: 0.45;
+}
+
+.sfc-ai-msg-error {
+  border-left: 3px solid var(--text-error);
+}
+
+.sfc-ai-msg-error-text {
+  color: var(--text-error);
+  white-space: pre-wrap;
+}
+
+.sfc-run-status-warn {
+  color: var(--text-warning, var(--text-error));
+}
+
+.sfc-ai-hidden {
+  display: none;
+}
+
+.sfc-ai-fatal {
+  margin: auto;
+  padding: 2em;
+  max-width: 36rem;
+}
+
+.sfc-ai-fatal-title {
+  font-weight: 700;
+  color: var(--text-error);
+  margin-bottom: 0.5em;
+}
+
+.sfc-ai-fatal-detail {
+  white-space: pre-wrap;
+  font-size: 0.85em;
+  max-height: 40vh;
+  overflow: auto;
+  margin-bottom: 0.75em;
+}
+
+/* --- dialogs --- */
+/* `window.prompt` is gone and every dialog now renders through
+   `sdk/src/uiDialogs.ts`; the chrome is the shared `sfc-modal-*` block above. */
